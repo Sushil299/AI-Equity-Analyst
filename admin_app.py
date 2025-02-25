@@ -11,7 +11,7 @@ import streamlit as st
 import requests
 from datetime import datetime
 import os
-
+import io
 
 # Backend URL (Replace with your actual Render URL)
 BACKEND_URL = "https://ai-equity-analyst.onrender.com"
@@ -27,16 +27,26 @@ uploaded_file = st.sidebar.file_uploader("Upload PDF File", type=["pdf"])
 
 if st.sidebar.button("Upload File"):
     if uploaded_file and company_name and document_date and document_type:
-        files = {"file": uploaded_file.getvalue()}
-        data = {
-            "company_name": company_name,
-            "document_date": document_date.strftime("%Y-%m-%d"),
-            "document_type": document_type,
-        }
-        response = requests.post(f"{BACKEND_URL}/upload/", files=files, data=data)
-        if response.status_code == 200:
-            st.sidebar.success("✅ File uploaded successfully!")
-        else:
-            st.sidebar.error("❌ Upload failed. Please try again.")
+        try:
+            # Convert file to bytes and send as a proper file object
+            file_bytes = io.BytesIO(uploaded_file.getvalue())  # Convert to file-like object
+            files = {"file": ("document.pdf", file_bytes, "application/pdf")}  # ✅ Correct format
+
+            data = {
+                "company_name": company_name,
+                "document_date": document_date.strftime("%Y-%m-%d"),
+                "document_type": document_type,
+            }
+
+            response = requests.post(f"{BACKEND_URL}/upload/", files=files, data=data)
+
+            if response.status_code == 200:
+                st.sidebar.success("✅ File uploaded successfully!")
+            else:
+                st.sidebar.error(f"❌ Upload failed! Backend Error: {response.text}")
+
+        except Exception as e:
+            st.sidebar.error(f"❌ Upload failed! Error: {str(e)}")
+
     else:
         st.sidebar.warning("⚠️ Please fill all fields and upload a file.")
