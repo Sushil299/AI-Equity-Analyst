@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-pypdf
+pymupdf
 google-generativeai
 python-multipart
 requests
