@@ -16,15 +16,7 @@ import os
 # Backend URL (Replace with your actual Render URL)
 BACKEND_URL = "https://ai-equity-analyst.onrender.com"
 
-st.title("🔒 Admin Panel - Upload Documents")
-
-# Admin Login (Basic Security)
-password = st.text_input("Enter Admin Password", type="password")
-correct_password = "your_secret_password"  # Replace this with your actual password
-
-if password != correct_password:
-    st.warning("⚠️ Enter the correct password to access the admin panel.")
-    st.stop()
+st.title("📤 Admin Panel - Upload Documents")
 
 # File Upload Section
 st.sidebar.header("📤 Upload Earnings Documents")
