@@ -6,3 +6,5 @@ python-multipart
 requests
 nest_asyncio
 psycopg2
+streamlit
+pandas
