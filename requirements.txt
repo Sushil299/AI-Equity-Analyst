@@ -5,3 +5,4 @@ google-generativeai
 python-multipart
 requests
 nest_asyncio
+psycopg2
