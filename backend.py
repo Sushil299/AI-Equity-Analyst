@@ -48,9 +48,10 @@ conn.commit()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Set in Render's environment variables
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ✅ Extract Text from PDF Without Storing the File
-def extract_text_from_pdf(pdf_bytes):
-    doc = fitz.open(stream=pdf_bytes.read(), filetype="pdf")
+# ✅ Extract Text from PDF Without Storing the File (Fixed async issue)
+async def extract_text_from_pdf(file: UploadFile):
+    file_bytes = await file.read()  # Properly read the file asynchronously
+    doc = fitz.open(stream=file_bytes, filetype="pdf")  # Convert to sync file object
     return "\n".join([page.get_text("text") for page in doc])
 
 # ✅ API: Upload & Process File
@@ -62,8 +63,8 @@ async def upload_file(
     document_type: str = Form(...)
 ):
     try:
-        # ✅ Extract text from PDF
-        text = extract_text_from_pdf(file)
+        # ✅ Fix: Await extract_text_from_pdf() to handle async file read properly
+        text = await extract_text_from_pdf(file)
 
         # ✅ Store extracted text in `summaries` table
         cursor.execute("""
