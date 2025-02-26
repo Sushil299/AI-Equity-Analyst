@@ -108,7 +108,7 @@ async def upload_file(
 #API to list available companies
 @app.get("/companies")
 async def get_companies():
-    cursor.execute(SELECT DISTINCT company_name FROM summaries")
+    cursor.execute("SELECT DISTINCT company_name FROM summaries")
     companies = [row[0] for row in cursor.fetchall()]
     return {"companies": companies}
 
