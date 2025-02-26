@@ -9,76 +9,89 @@ Original file is located at
 
 import streamlit as st
 import requests
-from datetime import datetime
-import os
-import io
 import pandas as pd
 
 # Backend URL
 BACKEND_URL = "https://ai-equity-analyst.onrender.com"
 
 st.title("📤 Admin Panel - Upload Documents")
+st.markdown("### Enter Company Details and Upload Documents Separately")
 
-# 🔹 Form for Uploading Individual Files
-st.sidebar.header("Upload Financial Documents")
+# Company Info
+nse_ticker = st.text_input("NSE Ticker")
+company_name = st.text_input("Company Name")
 
-nse_ticker = st.sidebar.text_input("NSE Ticker")
-company_name = st.sidebar.text_input("Company Name")
+# Function to upload documents
+def upload_document(doc_type, period, uploaded_file):
+    if uploaded_file:
+        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
+        data = {
+            "company_name": company_name,
+            "document_date": period,
+            "document_type": doc_type,
+        }
+        response = requests.post(f"{BACKEND_URL}/upload/", files=files, data=data)
+        return response
 
-# 🔹 Annual Report Upload
-annual_year = st.sidebar.selectbox("Annual Report for", ["FY25", "FY24", "FY23", "FY22"])
-annual_file = st.sidebar.file_uploader("Upload Annual Report", type=["pdf"], key="annual")
+# Annual Report Upload
+st.markdown("#### 📅 Annual Report")
+annual_year = st.selectbox("Annual Report for", ["FY25", "FY24", "FY23", "FY22"])
+annual_file = st.file_uploader("Upload Annual Report", type=["pdf"], key="annual")
 
-# 🔹 Quarterly Report Upload
-quarter_year = st.sidebar.selectbox("Quarterly Report for", ["Q1FY25", "Q2FY25", "Q3FY25", "Q4FY25"])
-quarterly_file = st.sidebar.file_uploader("Upload Quarterly Report", type=["pdf"], key="quarterly")
+# Quarterly Report Upload
+st.markdown("#### 🏢 Quarterly Report")
+quarter_year = st.selectbox("Quarterly Report for", ["Q1FY25", "Q2FY25", "Q3FY25", "Q4FY25"])
+quarterly_file = st.file_uploader("Upload Quarterly Report", type=["pdf"], key="quarterly")
 
-# 🔹 Earnings Call Transcript Upload
-earning_year = st.sidebar.selectbox("Earnings Call for", ["Q1FY25", "Q2FY25", "Q3FY25", "Q4FY25"])
-earning_file = st.sidebar.file_uploader("Upload Earnings Call Transcript", type=["pdf"], key="earnings")
+# Earnings Call Transcript Upload
+st.markdown("#### 🎙 Earnings Call Transcript")
+earning_year = st.selectbox("Earnings Call Transcript for", ["Q1FY25", "Q2FY25", "Q3FY25", "Q4FY25"])
+earning_file = st.file_uploader("Upload Earnings Call Transcript", type=["pdf"], key="earnings")
 
-# 🔹 Investor Presentation Upload
-presentation_year = st.sidebar.selectbox("Investor Presentation for", ["Q1FY25", "Q2FY25", "Q3FY25", "Q4FY25"])
-presentation_file = st.sidebar.file_uploader("Upload Investor Presentation", type=["pdf"], key="presentation")
+# Investor Presentation Upload
+st.markdown("#### 📊 Investor Presentation")
+presentation_year = st.selectbox("Investor Presentation for", ["Q1FY25", "Q2FY25", "Q3FY25", "Q4FY25"])
+presentation_file = st.file_uploader("Upload Investor Presentation", type=["pdf"], key="presentation")
 
-if st.sidebar.button("Submit"):
-    if company_name and nse_ticker:
-        uploaded = False
-        for doc_type, file, period in [
-            ("Annual Report", annual_file, annual_year),
-            ("Quarterly Report", quarterly_file, quarter_year),
-            ("Earnings Call Transcript", earning_file, earning_year),
-            ("Investor Presentation", presentation_file, presentation_year)
+# Submit Button
+if st.button("Submit"):
+    if not company_name or not nse_ticker:
+        st.warning("⚠️ Please enter both NSE Ticker and Company Name before uploading.")
+    else:
+        upload_status = []
+
+        # Process each document type individually
+        for doc_type, period, file in [
+            ("Annual Report", annual_year, annual_file),
+            ("Quarterly Report", quarter_year, quarterly_file),
+            ("Earnings Call Transcript", earning_year, earning_file),
+            ("Investor Presentation", presentation_year, presentation_file)
         ]:
             if file:
-                files = {"file": (file.name, file.getvalue(), "application/pdf")}
-                data = {
-                    "company_name": company_name,
-                    "document_date": period,
-                    "document_type": doc_type,
-                }
-                response = requests.post(f"{BACKEND_URL}/upload/", files=files, data=data)
+                response = upload_document(doc_type, period, file)
                 if response.status_code == 200:
-                    st.sidebar.success(f"✅ {doc_type} uploaded successfully!")
-                    uploaded = True
+                    upload_status.append(f"{doc_type}: ✅ Uploaded successfully!")
                 else:
-                    st.sidebar.error(f"❌ Upload failed for {doc_type}: {response.text}")
+                    upload_status.append(f"{doc_type}: ❌ Upload failed! ({response.text})")
 
-        if not uploaded:
-            st.sidebar.warning("⚠️ No files uploaded. Please select at least one document.")
-    else:
-        st.sidebar.warning("⚠️ Please enter the NSE ticker and company name.")
+        if upload_status:
+            st.success("\n".join(upload_status))
+        else:
+            st.warning("⚠️ No files were uploaded. Please select at least one document.")
 
-# 🔹 Show Available Companies & Uploaded Documents
-st.markdown("## 📄 Uploaded Company Documents")
+# Divider
+st.markdown("---")
+
+# Show Uploaded Documents in Table Format
+st.markdown("## 📄 Uploaded Company Documents Overview")
 
 response = requests.get(f"{BACKEND_URL}/admin-summary")
 if response.status_code == 200:
-    company_data = response.json().get("companies", [])
-    if company_data:
-        df = pd.DataFrame(company_data)
+    data = response.json().get("companies", [])
+    if data:
+        df = pd.DataFrame(data)
         st.table(df)
     else:
-        st.warning("⚠️ No data available.")
+        st.warning("⚠️ No company data available.")
 else:
     st.error("❌ Failed to fetch company data.")
