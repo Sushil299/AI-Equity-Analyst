@@ -10,30 +10,30 @@ Original file is located at
 import os
 import sqlite3
 import datetime
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 import google.generativeai as genai
 import fitz  # PyMuPDF for PDF processing
 
-# ✅ Change storage paths to relative directories
+# Define persistent storage paths
 DB_DIR = "./data"
 DB_PATH = os.path.join(DB_DIR, "summaries.db")
 UPLOAD_DIR = "./uploads"
 
-# ✅ Ensure directories exist
+# Ensure directories exist
 os.makedirs(DB_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ✅ Connect to SQLite in a writable location
+# Connect to SQLite in a writable location
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
-# ✅ Create Tables (if they don't exist)
+# Create Table to Store Summaries
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS summaries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_name TEXT NOT NULL,
-    document_date DATE NOT NULL,
+    document_date TEXT NOT NULL,
     document_type TEXT NOT NULL,
     filename TEXT NOT NULL,
     summary TEXT NOT NULL
@@ -41,20 +41,22 @@ CREATE TABLE IF NOT EXISTS summaries (
 """)
 conn.commit()
 
-# ✅ Configure Gemini AI API
+# Configure Gemini AI API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise Exception("GEMINI_API_KEY not set in environment variables.")
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ✅ Initialize FastAPI
+# Initialize FastAPI
 app = FastAPI()
 
-# ✅ Function to Extract Text from PDF
+# Function to extract text from PDF given a file path
 def extract_text_from_pdf(pdf_path):
     doc = fitz.open(pdf_path)
     text = "\n".join([page.get_text("text") for page in doc])
     return text
 
-# ✅ API: Upload Files & Store Permanently
+# API: Upload File (Overwrite if exists)
 @app.post("/upload/")
 async def upload_file(
     file: UploadFile = File(...),
@@ -63,38 +65,59 @@ async def upload_file(
     document_type: str = Form(...)
 ):
     try:
-        # Validate Date Format
-        datetime.datetime.strptime(document_date, "%Y-%m-%d")
+        # Validate Date Format (YYYY-MM-DD or FY25/Q1FY25)
+        try:
+            datetime.datetime.strptime(document_date, "%Y-%m-%d")
+        except ValueError:
+            pass  # Allow formatted strings like "FY25", "Q1FY25"
 
-        # ✅ Save file in `./uploads/`
+        # Check if a document of the same type exists for this company
+        cursor.execute("""
+            SELECT filename FROM summaries WHERE company_name = ? AND document_type = ?
+        """, (company_name, document_type))
+        existing_record = cursor.fetchone()
+
+        if existing_record:
+            existing_filename = existing_record[0]
+            existing_filepath = os.path.join(UPLOAD_DIR, existing_filename)
+            # Delete old file if it exists
+            if os.path.exists(existing_filepath):
+                os.remove(existing_filepath)
+            # Remove old database entry
+            cursor.execute("""
+                DELETE FROM summaries WHERE company_name = ? AND document_type = ?
+            """, (company_name, document_type))
+            conn.commit()
+
+        # Save new file in the uploads directory
         file_path = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_path, "wb") as f:
             f.write(await file.read())
 
-        # ✅ Extract text from saved PDF file
+        # Extract text from the saved PDF file
         text = extract_text_from_pdf(file_path)
 
-        # ✅ Store in SQLite
+        # Insert new record into SQLite
         cursor.execute("""
             INSERT INTO summaries (company_name, document_date, document_type, filename, summary)
             VALUES (?, ?, ?, ?, ?)
         """, (company_name, document_date, document_type, file.filename, text))
         conn.commit()
 
-        return {"message": "✅ File uploaded successfully & stored permanently!"}
+        return {"message": "✅ File uploaded successfully & previous document overwritten."}
 
     except Exception as e:
         conn.rollback()
-        return {"error": f"Failed to upload file: {str(e)}"}
+        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
 
-# ✅ API: Fetch All Companies for Dropdown in Frontend
+# API: Fetch All Companies (for dropdown)
 @app.get("/companies")
 async def get_companies():
     cursor.execute("SELECT DISTINCT company_name FROM summaries")
     companies = [row[0] for row in cursor.fetchall()]
     return {"companies": companies} if companies else {"message": "No companies found."}
 
-# ✅ API: Generate Comprehensive Analysis from Stored Data
+# API: Generate Comprehensive Analysis from Stored Documents
 @app.get("/summary/{company_name}")
 async def get_summary(company_name: str):
     cursor.execute("SELECT document_type, summary FROM summaries WHERE company_name = ?", (company_name,))
@@ -103,29 +126,81 @@ async def get_summary(company_name: str):
     if not rows:
         return {"message": "No documents found for this company."}
 
-    doc_texts = {doc_type: "" for doc_type, _ in rows}
+    doc_texts = {}
     for doc_type, summary in rows:
-        doc_texts[doc_type] += summary + "\n\n"
+        if doc_type in doc_texts:
+            doc_texts[doc_type] += summary + "\n\n"
+        else:
+            doc_texts[doc_type] = summary + "\n\n"
 
-    # ✅ Generate AI-Powered Analysis
+    # AI Prompt to generate a structured equity research report
     ai_prompt = f"""
-    You are a financial analyst. Generate a structured **equity research report** for {company_name} using:
+    You are a financial analyst. Generate a structured **equity research report** for {company_name} using all available documents.
 
-    **🔹 1. Executive Summary**
-    **🔹 2. Key Financial Highlights (Table)**
-    **🔹 3. Business & Operational Highlights**
-    **🔹 4. Market & Competitive Positioning**
-    **🔹 5. Valuation & Outlook (Include Charts)**
+    Ensure you **do not** include irrelevant details like "AI-Powered Report" or disclaimers.
+    If valuation or chart data is unavailable, **ignore it completely** instead of stating "unable to calculate."
 
-    **Annual Report Summary:** {doc_texts.get('Annual Report', 'No annual report available.')}
-    **Earnings Call Summary:** {doc_texts.get('Earnings Call Transcript', 'No earnings call available.')}
-    **Investor Presentation Summary:** {doc_texts.get('Investor Presentation', 'No investor presentation available.')}
-    **Analyst Call Summary:** {doc_texts.get('Analyst Call Transcript', 'No analyst call available.')}
+    **Report Sections:**
 
-    Ensure the response is formatted properly with markdown tables.
+    **About the Company:**
+    Provide a brief business summary in this format:
+    _Example: Aeroflex Industries Limited (AERIND), incorporated in 1993, manufactures metallic flexible flow solutions made with stainless steel._
+
+    **1. Executive Summary**
+    Briefly summarize the company’s performance.
+
+    **2. Key Financial Highlights**
+    Present financial metrics in a Markdown table. Example:
+    ```
+    | Metric             | Q1 2024 | Q2 2024 | Q3 2024 | Q4 2024 |
+    |--------------------|---------|---------|---------|---------|
+    | Revenue (₹ Cr)     | 5000    | 5200    | 5400    | 5600    |
+    | Net Profit (₹ Cr)  | 800     | 850     | 900     | 950     |
+    ```
+
+    **3. Business & Operational Highlights**
+    Summarize key developments.
+
+    **4. Market & Competitive Positioning**
+    Discuss the company’s industry standing.
+
+    **5. Valuation & Outlook**
+    Provide insights on future growth and risks.
+
+    **Available Data Sources:**
+    - Annual Report: {doc_texts.get('Annual Report', 'Not available')}
+    - Earnings Call Transcript: {doc_texts.get('Earnings Call Transcript', 'Not available')}
+    - Investor Presentation: {doc_texts.get('Investor Presentation', 'Not available')}
+    - Analyst Call Transcript: {doc_texts.get('Analyst Call Transcript', 'Not available')}
     """
 
     model = genai.GenerativeModel("gemini-1.5-flash")
     response = model.generate_content(ai_prompt)
-
     return {"Company Name": company_name, "Comprehensive Analysis": response.text}
+
+# API: List Uploaded Files for Admin Tracking
+@app.get("/admin-summary")
+async def get_admin_summary():
+    cursor.execute("""
+        SELECT company_name,
+               MAX(CASE WHEN document_type = 'Annual Report' THEN 'Yes' ELSE 'No' END) AS annual_report,
+               MAX(CASE WHEN document_type = 'Quarterly Report' THEN 'Yes' ELSE 'No' END) AS quarterly_report,
+               MAX(CASE WHEN document_type = 'Earnings Call Transcript' THEN 'Yes' ELSE 'No' END) AS earnings_call,
+               MAX(CASE WHEN document_type = 'Investor Presentation' THEN 'Yes' ELSE 'No' END) AS investor_presentation,
+               MIN(document_date) AS created_date,
+               MAX(document_date) AS last_updated_date
+        FROM summaries
+        GROUP BY company_name
+    """)
+    rows = cursor.fetchall()
+    return {"companies": [
+        {"Company Name": row[0], "Annual Report": row[1], "Quarterly Report": row[2],
+         "Earnings Call Transcript": row[3], "Investor Presentation": row[4],
+         "Created Date": row[5], "Last Updated Date": row[6]} for row in rows
+    ]}
+
+# API: Download a Specific File
+@app.get("/download-file/{filename}")
+async def download_file(filename: str):
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    return FileResponse(file_path, filename=filename) if os.path.exists(file_path) else {"error": "File not found!"}
