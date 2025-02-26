@@ -32,15 +32,14 @@ CREATE TABLE IF NOT EXISTS summaries (
     document_type TEXT NOT NULL,
     filename TEXT NOT NULL,
     summary TEXT NOT NULL,
-    CONSTRAINT unique_summary UNIQUE (company_name, document_date, document_type)
+    UNIQUE(company_name, document_date, document_type)
 );
 
 CREATE TABLE IF NOT EXISTS final_analysis (
     id SERIAL PRIMARY KEY,
     company_name TEXT NOT NULL,
-    document_date TEXT NOT NULL,
     final_summary TEXT NOT NULL,
-    UNIQUE(company_name, document_date)
+    UNIQUE(company_name)
 );
 """)
 conn.commit()
@@ -76,10 +75,10 @@ async def upload_file(
         """, (company_name, document_date, document_type, file.filename, text))
         conn.commit()
 
-        # ✅ Fetch all existing summaries for this company & period
+        # ✅ Fetch all existing summaries for this company
         cursor.execute("""
-            SELECT summary FROM summaries WHERE company_name = %s AND document_date = %s
-        """, (company_name, document_date))
+            SELECT summary FROM summaries WHERE company_name = %s
+        """, (company_name,))
         all_summaries = [row[0] for row in cursor.fetchall()]
 
         # ✅ Combine all document summaries
@@ -87,7 +86,7 @@ async def upload_file(
 
         # ✅ Generate AI Analysis Only When a New File is Uploaded
         ai_prompt = f"""
-        Generate a structured **equity research report** for {company_name} for the period {document_date}.
+        Generate a structured **equity research report** for {company_name}.
 
         **1. Executive Summary**
         **2. Key Financial Highlights** (Show in Markdown table)
@@ -105,11 +104,11 @@ async def upload_file(
 
         # ✅ Store AI-generated report in `final_analysis` table
         cursor.execute("""
-            INSERT INTO final_analysis (company_name, document_date, final_summary)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (company_name, document_date) DO UPDATE
+            INSERT INTO final_analysis (company_name, final_summary)
+            VALUES (%s, %s)
+            ON CONFLICT (company_name) DO UPDATE
             SET final_summary = EXCLUDED.final_summary
-        """, (company_name, document_date, final_analysis))
+        """, (company_name, final_analysis))
         conn.commit()
 
         return {"message": "✅ File uploaded & AI analysis updated successfully."}
@@ -119,17 +118,17 @@ async def upload_file(
         raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
 
 # ✅ API: Fetch Precomputed AI Report (No Re-Analysis)
-@app.get("/summary/{company_name}/{document_date}")
-async def get_summary(company_name: str, document_date: str):
+@app.get("/summary/{company_name}")
+async def get_summary(company_name: str):
     cursor.execute("""
-        SELECT final_summary FROM final_analysis WHERE company_name = %s AND document_date = %s
-    """, (company_name, document_date))
+        SELECT final_summary FROM final_analysis WHERE company_name = %s
+    """, (company_name,))
 
     row = cursor.fetchone()
     if not row:
-        return {"message": "No precomputed analysis found for this company and period."}
+        return {"message": "No precomputed analysis found for this company."}
 
-    return {"Company Name": company_name, "Period": document_date, "Comprehensive Analysis": row[0]}
+    return {"Company Name": company_name, "Comprehensive Analysis": row[0]}
 
 # ✅ API: Fetch All Companies (For Dropdown in UI)
 @app.get("/companies")
@@ -143,10 +142,6 @@ async def get_companies():
 async def get_admin_summary():
     cursor.execute("""
         SELECT company_name,
-               MAX(CASE WHEN document_type = 'Annual Report' THEN 'Yes' ELSE 'No' END) AS annual_report,
-               MAX(CASE WHEN document_type = 'Quarterly Report' THEN 'Yes' ELSE 'No' END) AS quarterly_report,
-               MAX(CASE WHEN document_type = 'Earnings Call Transcript' THEN 'Yes' ELSE 'No' END) AS earnings_call,
-               MAX(CASE WHEN document_type = 'Investor Presentation' THEN 'Yes' ELSE 'No' END) AS investor_presentation,
                MIN(document_date) AS created_date,
                MAX(document_date) AS last_updated_date
         FROM summaries
@@ -154,9 +149,7 @@ async def get_admin_summary():
     """)
     rows = cursor.fetchall()
 
-    return {"companies": [{"Company Name": row[0], "Annual Report": row[1], "Quarterly Report": row[2],
-                           "Earnings Call Transcript": row[3], "Investor Presentation": row[4],
-                           "Created Date": row[5], "Last Updated Date": row[6]} for row in rows]}
+    return {"companies": [{"Company Name": row[0], "Created Date": row[1], "Last Updated Date": row[2]} for row in rows]}
 
 # ✅ API: Debug - View Raw Data (For Admin Use)
 @app.get("/debug-summaries")
