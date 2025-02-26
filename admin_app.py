@@ -13,40 +13,43 @@ from datetime import datetime
 import os
 import io
 
-# Backend URL (Replace with your actual Render URL)
+# Backend URL
 BACKEND_URL = "https://ai-equity-analyst.onrender.com"
 
 st.title("📤 Admin Panel - Upload Documents")
 
-# File Upload Section
-st.sidebar.header("📤 Upload Earnings Documents")
+# Upload Form
 company_name = st.sidebar.text_input("Company Name")
 document_date = st.sidebar.date_input("Document Date")
-document_type = st.sidebar.selectbox("Document Type", ["Earnings Call", "Investor Presentation", "Analyst Call"])
-uploaded_file = st.sidebar.file_uploader("Upload PDF File", type=["pdf"])
+document_type = st.sidebar.selectbox("Document Type", [
+    "Annual Report", "Earnings Call Transcript", "Investor Presentation", "Analyst Call Transcript"
+])
+uploaded_files = st.sidebar.file_uploader("Upload PDF Files", type=["pdf"], accept_multiple_files=True)
 
-if st.sidebar.button("Upload File"):
-    if uploaded_file and company_name and document_date and document_type:
-        try:
-            # Convert file to bytes and send as a proper file object
-            file_bytes = io.BytesIO(uploaded_file.getvalue())  # Convert to file-like object
-            files = {"file": ("document.pdf", file_bytes, "application/pdf")}  # ✅ Correct format
-
+if st.sidebar.button("Upload Files"):
+    if uploaded_files and company_name and document_date and document_type:
+        for uploaded_file in uploaded_files:
+            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
             data = {
                 "company_name": company_name,
                 "document_date": document_date.strftime("%Y-%m-%d"),
                 "document_type": document_type,
             }
-
             response = requests.post(f"{BACKEND_URL}/upload/", files=files, data=data)
 
             if response.status_code == 200:
-                st.sidebar.success("✅ File uploaded successfully!")
+                st.sidebar.success(f"✅ {uploaded_file.name} uploaded successfully!")
             else:
-                st.sidebar.error(f"❌ Upload failed! Backend Error: {response.text}")
-
-        except Exception as e:
-            st.sidebar.error(f"❌ Upload failed! Error: {str(e)}")
-
+                st.sidebar.error(f"❌ Upload failed for {uploaded_file.name}: {response.text}")
     else:
-        st.sidebar.warning("⚠️ Please fill all fields and upload a file.")
+        st.sidebar.warning("⚠️ Fill all fields & upload at least one file.")
+
+# 🔹 Disclaimer Section
+st.markdown("---")
+st.markdown(
+    """
+    ### ⚠️ Disclaimer:
+    This platform allows uploading multiple financial documents for AI-based analysis.
+    Please ensure that all uploaded files are relevant and accurate.
+    """
+)

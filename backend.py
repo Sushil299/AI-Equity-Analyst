@@ -8,69 +8,52 @@ Original file is located at
 """
 
 import os
-from fastapi import FastAPI, UploadFile, File, Form
-import google.generativeai as genai
-import fitz  # PyMuPDF for PDF processing
-import uvicorn
-import nest_asyncio
 import sqlite3
 import datetime
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import FileResponse
+import google.generativeai as genai
+import fitz  # PyMuPDF for PDF processing
 
-# Allow FastAPI to run asynchronously
-nest_asyncio.apply()
+# ✅ Define persistent storage paths
+DB_PATH = "/data/summaries.db"
+UPLOAD_DIR = "/data/uploads/"
 
-app = FastAPI()
+# ✅ Ensure directories exist
+os.makedirs("/data/", exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Load Gemini API Key from Environment Variable
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Securely fetch from environment
-if not GEMINI_API_KEY:
-    raise ValueError("❌ ERROR: GEMINI_API_KEY is not set in environment variables.")
-
-genai.configure(api_key=GEMINI_API_KEY)
-
-# Connect to SQLite Database
-conn = sqlite3.connect("summaries.db", check_same_thread=False)
+# ✅ Connect to SQLite in persistent storage
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
-# Create Table to Store Summaries
+# ✅ Create Tables (if they don't exist)
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS summaries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    company_name TEXT,
-    document_date DATE,
-    document_type TEXT,
-    filename TEXT,
-    summary TEXT
+    company_name TEXT NOT NULL,
+    document_date DATE NOT NULL,
+    document_type TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    summary TEXT NOT NULL
 )
 """)
 conn.commit()
 
-# Function to extract text from PDF
-def extract_text_from_pdf(pdf_file):
-    doc = fitz.open(stream=pdf_file, filetype="pdf")
-    text = "\n".join([page.get_text("text") for page in doc])  # Proper text formatting
+# ✅ Configure Gemini AI API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+genai.configure(api_key=GEMINI_API_KEY)
+
+# ✅ Initialize FastAPI
+app = FastAPI()
+
+# ✅ Function to Extract Text from PDF
+def extract_text_from_pdf(pdf_path):
+    doc = fitz.open(pdf_path)
+    text = "\n".join([page.get_text("text") for page in doc])
     return text
 
-# Function to analyze financial documents using Gemini Flash
-def analyze_financial_text(text):
-    model = genai.GenerativeModel("gemini-1.5-flash")
-
-    prompt = f"""
-    Analyze this financial document and provide a structured summary.
-
-    Key Points:
-    1. **Key Financial Highlights**
-    2. **Growth Opportunities (Green Flags)**
-    3. **Risks & Concerns (Red Flags)**
-    4. **Market Sentiment Analysis**
-
-    Document Text: {text}
-    """
-
-    response = model.generate_content(prompt)
-    return response.text
-
-# API Endpoint to Upload Files
+# ✅ API: Upload Files & Store Permanently
 @app.post("/upload/")
 async def upload_file(
     file: UploadFile = File(...),
@@ -79,56 +62,69 @@ async def upload_file(
     document_type: str = Form(...)
 ):
     try:
+        # Validate Date Format
         datetime.datetime.strptime(document_date, "%Y-%m-%d")
-    except ValueError:
-        return {"error": "Invalid date format. Use YYYY-MM-DD."}
 
-    file_bytes = await file.read()
+        # ✅ Save file permanently in `/data/uploads/`
+        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
 
-    if file.filename.endswith(".pdf"):
-        text = extract_text_from_pdf(file_bytes)
-    else:
-        text = file_bytes.decode("utf-8")
+        # ✅ Extract text from saved PDF file
+        text = extract_text_from_pdf(file_path)
 
-    analysis = analyze_financial_text(text)
+        # ✅ Store in SQLite
+        cursor.execute("""
+            INSERT INTO summaries (company_name, document_date, document_type, filename, summary)
+            VALUES (?, ?, ?, ?, ?)
+        """, (company_name, document_date, document_type, file.filename, text))
+        conn.commit()
 
-    cursor.execute(
-        "INSERT INTO summaries (company_name, document_date, document_type, filename, summary) VALUES (?, ?, ?, ?, ?)",
-        (company_name, document_date, document_type, file.filename, analysis)
-    )
-    conn.commit()
+        return {"message": "✅ File uploaded successfully & stored permanently!"}
 
-    return {
-        "Company Name": company_name,
-        "Date": document_date,
-        "Document Type": document_type,
-        "Filename": file.filename,
-        "Analysis": analysis
-    }
-#API to list available companies
+    except Exception as e:
+        conn.rollback()
+        return {"error": f"Failed to upload file: {str(e)}"}
+
+# ✅ API: Fetch All Companies for Dropdown in Frontend
 @app.get("/companies")
 async def get_companies():
     cursor.execute("SELECT DISTINCT company_name FROM summaries")
     companies = [row[0] for row in cursor.fetchall()]
-    return {"companies": companies}
+    return {"companies": companies} if companies else {"message": "No companies found."}
 
-
-# API Endpoint to Get Summaries for a Selected Company
+# ✅ API: Generate Comprehensive Analysis from Stored Data
 @app.get("/summary/{company_name}")
 async def get_summary(company_name: str):
-    cursor.execute("SELECT document_date, document_type, filename, summary FROM summaries WHERE company_name = ? ORDER BY document_date DESC", (company_name,))
+    cursor.execute("SELECT document_type, summary FROM summaries WHERE company_name = ?", (company_name,))
     rows = cursor.fetchall()
 
     if not rows:
-        return {"message": "No summaries found for this company."}
+        return {"message": "No documents found for this company."}
 
-    result = [
-        {"Date": row[0], "Document Type": row[1], "Filename": row[2], "Summary": row[3]}
-        for row in rows
-    ]
+    doc_texts = {doc_type: "" for doc_type, _ in rows}
+    for doc_type, summary in rows:
+        doc_texts[doc_type] += summary + "\n\n"
 
-    return {"Company Name": company_name, "Summaries": result}
+    # ✅ Generate AI-Powered Analysis
+    ai_prompt = f"""
+    You are a financial analyst. Generate a structured **equity research report** for {company_name} using:
 
-# Start FastAPI Server
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    **🔹 1. Executive Summary**
+    **🔹 2. Key Financial Highlights (Table)**
+    **🔹 3. Business & Operational Highlights**
+    **🔹 4. Market & Competitive Positioning**
+    **🔹 5. Valuation & Outlook (Include Charts)**
+
+    **Annual Report Summary:** {doc_texts.get('Annual Report', 'No annual report available.')}
+    **Earnings Call Summary:** {doc_texts.get('Earnings Call Transcript', 'No earnings call available.')}
+    **Investor Presentation Summary:** {doc_texts.get('Investor Presentation', 'No investor presentation available.')}
+    **Analyst Call Summary:** {doc_texts.get('Analyst Call Transcript', 'No analyst call available.')}
+
+    Ensure the response is formatted properly with markdown tables.
+    """
+
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(ai_prompt)
+
+    return {"Company Name": company_name, "Comprehensive Analysis": response.text}
