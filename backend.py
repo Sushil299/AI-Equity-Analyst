@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS summaries (
     document_type TEXT NOT NULL,
     filename TEXT NOT NULL,
     summary TEXT NOT NULL,
-    UNIQUE (company_name, document_date, document_type)
+    CONSTRAINT unique_summary UNIQUE (company_name, document_date, document_type)
 );
 
 CREATE TABLE IF NOT EXISTS final_analysis (
