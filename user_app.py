@@ -49,10 +49,3 @@ else:
         else:
             st.error("❌ Failed to fetch summaries.")
 
-#Disclaimer Section
-st.markdown("-----")
-st.markdown(
-    ""
-    ###🛑Disclaimer: This is AI generated content and does not constitute as a investment recommendation. Please consult your financial advisor before making any investment decision.
-    ""
-)
