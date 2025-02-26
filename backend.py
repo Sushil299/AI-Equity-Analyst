@@ -8,30 +8,26 @@ Original file is located at
 """
 
 import os
-import sqlite3
 import datetime
+import psycopg2
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 import google.generativeai as genai
 import fitz  # PyMuPDF for PDF processing
 
-# Define persistent storage paths
-DB_DIR = "./data"
-DB_PATH = os.path.join(DB_DIR, "summaries.db")
-UPLOAD_DIR = "./uploads"
+# ✅ Load PostgreSQL Database URL from Environment Variables
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise Exception("DATABASE_URL is not set. Please configure it in Render.")
 
-# Ensure directories exist
-os.makedirs(DB_DIR, exist_ok=True)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Connect to SQLite in a writable location
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+# ✅ Connect to PostgreSQL
+conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
-# Create Table to Store Summaries
+# ✅ Create Table if not exists
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS summaries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     company_name TEXT NOT NULL,
     document_date TEXT NOT NULL,
     document_type TEXT NOT NULL,
@@ -41,22 +37,22 @@ CREATE TABLE IF NOT EXISTS summaries (
 """)
 conn.commit()
 
-# Configure Gemini AI API
+# ✅ Configure Gemini AI API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise Exception("GEMINI_API_KEY not set in environment variables.")
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Initialize FastAPI
+# ✅ Initialize FastAPI
 app = FastAPI()
 
-# Function to extract text from PDF given a file path
+# ✅ Function to extract text from PDF
 def extract_text_from_pdf(pdf_path):
     doc = fitz.open(pdf_path)
     text = "\n".join([page.get_text("text") for page in doc])
     return text
 
-# API: Upload File (Overwrite if exists)
+# ✅ API: Upload File (Overwrites Existing)
 @app.post("/upload/")
 async def upload_file(
     file: UploadFile = File(...),
@@ -65,42 +61,37 @@ async def upload_file(
     document_type: str = Form(...)
 ):
     try:
-        # Validate Date Format (YYYY-MM-DD or FY25/Q1FY25)
+        # ✅ Validate Date Format
         try:
             datetime.datetime.strptime(document_date, "%Y-%m-%d")
         except ValueError:
-            pass  # Allow formatted strings like "FY25", "Q1FY25"
+            pass
 
-        # Check if a document of the same type exists for this company
+        # ✅ Check if a document of the same type already exists
         cursor.execute("""
-            SELECT filename FROM summaries WHERE company_name = ? AND document_type = ?
+            SELECT filename FROM summaries WHERE company_name = %s AND document_type = %s
         """, (company_name, document_type))
         existing_record = cursor.fetchone()
 
         if existing_record:
-            existing_filename = existing_record[0]
-            existing_filepath = os.path.join(UPLOAD_DIR, existing_filename)
-            # Delete old file if it exists
-            if os.path.exists(existing_filepath):
-                os.remove(existing_filepath)
-            # Remove old database entry
+            # ✅ Remove old database entry
             cursor.execute("""
-                DELETE FROM summaries WHERE company_name = ? AND document_type = ?
+                DELETE FROM summaries WHERE company_name = %s AND document_type = %s
             """, (company_name, document_type))
             conn.commit()
 
-        # Save new file in the uploads directory
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        # ✅ Save new file locally
+        file_path = f"./uploads/{file.filename}"
         with open(file_path, "wb") as f:
             f.write(await file.read())
 
-        # Extract text from the saved PDF file
+        # ✅ Extract text from PDF
         text = extract_text_from_pdf(file_path)
 
-        # Insert new record into SQLite
+        # ✅ Store in PostgreSQL
         cursor.execute("""
             INSERT INTO summaries (company_name, document_date, document_type, filename, summary)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
         """, (company_name, document_date, document_type, file.filename, text))
         conn.commit()
 
@@ -110,62 +101,33 @@ async def upload_file(
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
 
-# API: Fetch All Companies (for dropdown)
+# ✅ API: Fetch All Companies
 @app.get("/companies")
 async def get_companies():
     cursor.execute("SELECT DISTINCT company_name FROM summaries")
     companies = [row[0] for row in cursor.fetchall()]
     return {"companies": companies} if companies else {"message": "No companies found."}
 
-# API: Generate Comprehensive Analysis from Stored Documents
+# ✅ API: Generate Comprehensive Analysis
 @app.get("/summary/{company_name}")
 async def get_summary(company_name: str):
-    cursor.execute("SELECT document_type, summary FROM summaries WHERE company_name = ?", (company_name,))
+    cursor.execute("SELECT document_type, summary FROM summaries WHERE company_name = %s", (company_name,))
     rows = cursor.fetchall()
 
     if not rows:
         return {"message": "No documents found for this company."}
 
-    doc_texts = {}
-    for doc_type, summary in rows:
-        if doc_type in doc_texts:
-            doc_texts[doc_type] += summary + "\n\n"
-        else:
-            doc_texts[doc_type] = summary + "\n\n"
+    doc_texts = {doc_type: summary for doc_type, summary in rows}
 
-    # AI Prompt to generate a structured equity research report
+    # ✅ AI Prompt
     ai_prompt = f"""
-    You are a financial analyst. Generate a structured **equity research report** for {company_name} using all available documents.
-
-    Ensure you **do not** include irrelevant details like "AI-Powered Report" or disclaimers.
-    If valuation or chart data is unavailable, **ignore it completely** instead of stating "unable to calculate."
-
-    **Report Sections:**
-
-    **About the Company:**
-    Provide a brief business summary in this format:
-    _Example: Aeroflex Industries Limited (AERIND), incorporated in 1993, manufactures metallic flexible flow solutions made with stainless steel._
+    Generate a structured **equity research report** for {company_name}.
 
     **1. Executive Summary**
-    Briefly summarize the company’s performance.
-
-    **2. Key Financial Highlights**
-    Present financial metrics in a Markdown table. Example:
-    ```
-    | Metric             | Q1 2024 | Q2 2024 | Q3 2024 | Q4 2024 |
-    |--------------------|---------|---------|---------|---------|
-    | Revenue (₹ Cr)     | 5000    | 5200    | 5400    | 5600    |
-    | Net Profit (₹ Cr)  | 800     | 850     | 900     | 950     |
-    ```
-
+    **2. Key Financial Highlights** (Show in Markdown table)
     **3. Business & Operational Highlights**
-    Summarize key developments.
-
     **4. Market & Competitive Positioning**
-    Discuss the company’s industry standing.
-
     **5. Valuation & Outlook**
-    Provide insights on future growth and risks.
 
     **Available Data Sources:**
     - Annual Report: {doc_texts.get('Annual Report', 'Not available')}
@@ -178,7 +140,7 @@ async def get_summary(company_name: str):
     response = model.generate_content(ai_prompt)
     return {"Company Name": company_name, "Comprehensive Analysis": response.text}
 
-# API: List Uploaded Files for Admin Tracking
+# ✅ API: Admin Panel Summary
 @app.get("/admin-summary")
 async def get_admin_summary():
     cursor.execute("""
@@ -193,14 +155,9 @@ async def get_admin_summary():
         GROUP BY company_name
     """)
     rows = cursor.fetchall()
+
     return {"companies": [
         {"Company Name": row[0], "Annual Report": row[1], "Quarterly Report": row[2],
          "Earnings Call Transcript": row[3], "Investor Presentation": row[4],
          "Created Date": row[5], "Last Updated Date": row[6]} for row in rows
     ]}
-
-# API: Download a Specific File
-@app.get("/download-file/{filename}")
-async def download_file(filename: str):
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    return FileResponse(file_path, filename=filename) if os.path.exists(file_path) else {"error": "File not found!"}

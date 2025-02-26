@@ -86,11 +86,17 @@ st.markdown("---")
 st.markdown("## 📄 Uploaded Company Documents Overview")
 
 response = requests.get(f"{BACKEND_URL}/admin-summary")
+
 if response.status_code == 200:
     data = response.json().get("companies", [])
     if data:
         df = pd.DataFrame(data)
-        st.table(df)
+
+        # ✅ Fix: Ensure DataFrame formatting works
+        if not df.empty:
+            st.dataframe(df.style.set_properties(**{'text-align': 'center'}))  # ✅ Better table display
+        else:
+            st.warning("⚠️ No company data available.")
     else:
         st.warning("⚠️ No company data available.")
 else:
