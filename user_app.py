@@ -17,8 +17,8 @@ BACKEND_URL = "https://ai-equity-analyst.onrender.com"
 st.set_page_config(page_title="AI Equity Analyst", layout="wide")
 
 # Title Section
-st.title("📊 AI Equity Analyst")
-st.markdown("### Get the latest AI-powered financial summaries of listed companies.")
+st.title("AI Equity Analyst")
+st.markdown("###Get AI-powered fundamental analysis of listed companies.")
 
 # Fetch Available Companies for Dropdown
 st.sidebar.header("Select a Company")
@@ -48,3 +48,11 @@ else:
                 st.warning("⚠️ No summaries found for this company.")
         else:
             st.error("❌ Failed to fetch summaries.")
+
+#Disclaimer Section
+st.markdown("-----")
+st.markdown(
+    ""
+    ###🛑Disclaimer: This is AI generated content and does not constitute as a investment recommendation. Please consult your financial advisor before making any investment decision.
+    ""
+)
