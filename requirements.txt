@@ -1,5 +1,8 @@
-fastapi
-uvicorn
-psycopg2
 google-generativeai
 pymupdf
+fastapi
+uvicorn
+python-multipart
+requests
+nest_asyncio
+psycopg2
