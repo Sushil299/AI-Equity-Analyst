@@ -15,15 +15,16 @@ from fastapi.responses import FileResponse
 import google.generativeai as genai
 import fitz  # PyMuPDF for PDF processing
 
-# ✅ Define persistent storage paths
-DB_PATH = "/data/summaries.db"
-UPLOAD_DIR = "/data/uploads/"
+# ✅ Change storage paths to relative directories
+DB_DIR = "./data"
+DB_PATH = os.path.join(DB_DIR, "summaries.db")
+UPLOAD_DIR = "./uploads"
 
 # ✅ Ensure directories exist
-os.makedirs("/data/", exist_ok=True)
+os.makedirs(DB_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ✅ Connect to SQLite in persistent storage
+# ✅ Connect to SQLite in a writable location
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
@@ -65,7 +66,7 @@ async def upload_file(
         # Validate Date Format
         datetime.datetime.strptime(document_date, "%Y-%m-%d")
 
-        # ✅ Save file permanently in `/data/uploads/`
+        # ✅ Save file in `./uploads/`
         file_path = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_path, "wb") as f:
             f.write(await file.read())
