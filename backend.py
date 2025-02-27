@@ -69,38 +69,69 @@ async def upload_files(
         # ✅ Generate AI Analysis
         ai_prompt = f"""
 
-        "You are an advanced AI equity analyst specializing in fundamental and financial analysis. Given the earnings call transcript, investor presentation, and quarterly results of {company_name} for {analysis_quarter} generate a well-structured equity research report. Your goal is to provide clear and actionable insights for investors, helping them make informed investment decisions. Also make sure not to write "AI powered equity report in title.
-        Just mention - Company Name and Quarter in subtitle or header2
+        ""You are an AI equity analyst specializing in professional financial research. Given the earnings call transcript, investor presentation, and quarterly results of {company_name}, generate a well-structured, professional-grade equity research report similar to those published by JP Morgan, Goldman Sachs, and Motilal Oswal.
+        Your report should be investor-focused, data-driven, and presentable, using Markdown formatting, tables, and charts where applicable to improve readability.
 
-        Structure your response as follows:
-        1️⃣ Company Overview - Briefly introduce the company, its industry, and its business model.
+        📊 Investment Research Report: {company_name}
+        Analysis Quarter: {analysis_quarter}
+        Analyst Rating: (Buy/Hold/Sell) – Provide a clear investment recommendation with justification
 
-        2️⃣ Financial Performance Summary
-        Highlight revenue, profit, margins, and any notable trends.
-        Compare year-over-year (YoY) and quarter-over-quarter (QoQ) performance.
-        Mention any significant financial improvements or concerns.
+        🔹 1. Executive Summary
+        Brief overview of the company, its business segments, and industry.
+        Key takeaways from the analysis.
+        1-line investment recommendation (Buy, Hold, or Sell) with key justification.
 
-        3️⃣ Key Highlights from the Earnings Call
+        📈 2. Financial Performance Summary
+        Present financial metrics like Revenue, EBITDA, Net Profit, EPS, and margins.
+        Use a table to show YoY (Year-over-Year) and QoQ (Quarter-over-Quarter) trends.
+        Include a bar chart or line graph if a trend is evident.
+        📊 Example Table Format:
 
-        Summarize important takeaways from management’s discussion.
-        Address strategic plans, growth initiatives, and operational updates.
+        Metric	Q3FY25	Q2FY25	YoY Growth (%)	QoQ Growth (%)
+        Revenue ($M)	5,000	4,800	+10%	+4%
+        EBITDA ($M)	1,200	1,150	+8.7%	+4.3%
+        Net Profit ($M)	800	750	+12%	+6.7%
+        EPS ($)	3.25	3.10	+15%	+4.8%
 
-        4️⃣ Market Trends & Industry Outlook
+        🔑 3. Key Highlights from the Earnings Call
+        Major takeaways from management’s commentary.
+        Growth drivers, strategic plans, and operational updates.
+        Forward-looking guidance or revised outlook provided by management.
 
-        Discuss relevant macroeconomic factors, market trends, and industry conditions.
-        Explain how these factors impact the company’s future prospects.
+        🌍 4. Industry & Macroeconomic Trends
+        Current market trends affecting the company’s industry.
+        Impact of inflation, interest rates, raw material costs, demand-supply dynamics.
+        Competitive positioning and any regulatory updates affecting the company.
 
-        5️⃣ Risks & Challenges
+        ⚠️ 5. Risks & Challenges
+        Company-specific risks: Competition, supply chain disruptions, regulatory challenges.
+        Macroeconomic risks: Inflation, global recession fears, geopolitical risks.
+        Financial risks: High debt levels, margin pressures, declining sales.
 
-        Identify potential risks, including regulatory, competitive, or financial risks.
-        Explain how the company is addressing these risks.
+        📊 6. Valuation & Peer Comparison
+        Compare the company’s valuation multiples with industry peers.
+        Use a table to show P/E, P/B, EV/EBITDA, and PEG ratio comparisons.
+        📊 Example Valuation Table:
 
-        6️⃣ Investment Thesis & Outlook
-        Provide an overall investment assessment.
-        Is the stock a Buy, Hold, or Sell based on the current data?
-        Justify the recommendation with key financials and qualitative insights.
+        Valuation Metric	{company_name}	Industry Average	Top Peer
+        P/E Ratio	18.5x	22.3x	20.1x
+        P/B Ratio	3.2x	3.5x	3.4x
+        EV/EBITDA	12.4x	14.2x	13.1x
+        EPS Growth (%)	12%	10%	11%
 
-        📌 Ensure the analysis is factual, well-organized, and written in a professional tone. Do not speculate without data. Avoid generic statements—support insights with concrete financials or management commentary
+        🔮 7. Future Growth Outlook & AI-Powered Forecasting
+        AI-estimated revenue & profit growth based on historical data and management guidance.
+        Future business expansions, product launches, and cost-cutting strategies.
+        Projected financial trends (Revenue, EPS, Margins) for the next 1-2 years.
+        If possible, generate a line chart to visualize projected growth.
+
+        📌 8. Investment Recommendation & Final Verdict
+        Clear Buy / Hold / Sell recommendation based on analysis.
+        Justification using financials, valuation, and future growth potential.
+        Key catalysts that could drive stock price movement.
+
+        📌 Ensure the analysis is formatted professionally with proper markdown, headings, tables, and charts where applicable.
+        📊 Use financial data and structured insights to create a high-quality investment research report."
 
         **Data Sources:**
         {combined_text}
