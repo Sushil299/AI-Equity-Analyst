@@ -68,13 +68,38 @@ async def upload_files(
 
         # ✅ Generate AI Analysis
         ai_prompt = f"""
-        Generate a structured **equity research report** for {company_name} for {analysis_quarter}.
 
-        **1. Executive Summary**
-        **2. Key Financial Highlights** (Show in Markdown table)
-        **3. Business & Operational Highlights**
-        **4. Market & Competitive Positioning**
-        **5. Valuation & Outlook**
+        "You are an advanced AI equity analyst specializing in fundamental and financial analysis. Given the earnings call transcript, investor presentation, and quarterly results of {company_name} for {analysis_quarter} generate a well-structured equity research report. Your goal is to provide clear and actionable insights for investors, helping them make informed investment decisions.
+
+        Structure your response as follows:
+        1️⃣ Company Overview - Briefly introduce the company, its industry, and its business model.
+
+        2️⃣ Financial Performance Summary
+        Highlight revenue, profit, margins, and any notable trends.
+        Compare year-over-year (YoY) and quarter-over-quarter (QoQ) performance.
+        Mention any significant financial improvements or concerns.
+
+        3️⃣ Key Highlights from the Earnings Call
+
+        Summarize important takeaways from management’s discussion.
+        Address strategic plans, growth initiatives, and operational updates.
+
+        4️⃣ Market Trends & Industry Outlook
+
+        Discuss relevant macroeconomic factors, market trends, and industry conditions.
+        Explain how these factors impact the company’s future prospects.
+
+        5️⃣ Risks & Challenges
+
+        Identify potential risks, including regulatory, competitive, or financial risks.
+        Explain how the company is addressing these risks.
+
+        6️⃣ Investment Thesis & Outlook
+        Provide an overall investment assessment.
+        Is the stock a Buy, Hold, or Sell based on the current data?
+        Justify the recommendation with key financials and qualitative insights.
+
+        📌 Ensure the analysis is factual, well-organized, and written in a professional tone. Do not speculate without data. Avoid generic statements—support insights with concrete financials or management commentary
 
         **Data Sources:**
         {combined_text}
