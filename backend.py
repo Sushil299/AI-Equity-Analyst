@@ -8,7 +8,6 @@ Original file is located at
 """
 
 import os
-import datetime
 import psycopg2
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
@@ -25,21 +24,12 @@ cursor = conn.cursor()
 
 # ✅ Ensure Tables Exist
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS summaries (
-    id SERIAL PRIMARY KEY,
-    company_name TEXT NOT NULL,
-    document_date TEXT NOT NULL,
-    document_type TEXT NOT NULL,
-    filename TEXT NOT NULL,
-    summary TEXT NOT NULL,
-    UNIQUE(company_name, document_date, document_type)
-);
-
 CREATE TABLE IF NOT EXISTS final_analysis (
     id SERIAL PRIMARY KEY,
     company_name TEXT NOT NULL,
+    analysis_quarter TEXT NOT NULL,
     final_summary TEXT NOT NULL,
-    UNIQUE(company_name)
+    UNIQUE(company_name, analysis_quarter)
 );
 """)
 conn.commit()
@@ -48,45 +38,37 @@ conn.commit()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Set in Render's environment variables
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ✅ Extract Text from PDF Without Storing the File (Fixed async issue)
+# ✅ Extract Text from PDF Without Storing the File
 async def extract_text_from_pdf(file: UploadFile):
-    file_bytes = await file.read()  # Properly read the file asynchronously
-    doc = fitz.open(stream=file_bytes, filetype="pdf")  # Convert to sync file object
+    file_bytes = await file.read()  # Read the file asynchronously
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
     return "\n".join([page.get_text("text") for page in doc])
 
-# ✅ API: Upload & Process File
+# ✅ API: Upload & Process Files
 @app.post("/upload/")
-async def upload_file(
-    file: UploadFile = File(...),
+async def upload_files(
     company_name: str = Form(...),
-    document_date: str = Form(...),
-    document_type: str = Form(...)
+    analysis_quarter: str = Form(...),
+    quarterly_report: UploadFile = File(...),
+    investor_presentation: UploadFile = File(...),
+    earnings_call_transcript: UploadFile = File(...)
 ):
     try:
-        # ✅ Fix: Await extract_text_from_pdf() to handle async file read properly
-        text = await extract_text_from_pdf(file)
+        # ✅ Extract text from all uploaded PDFs
+        report_text = await extract_text_from_pdf(quarterly_report)
+        presentation_text = await extract_text_from_pdf(investor_presentation)
+        transcript_text = await extract_text_from_pdf(earnings_call_transcript)
 
-        # ✅ Store extracted text in `summaries` table
-        cursor.execute("""
-            INSERT INTO summaries (company_name, document_date, document_type, filename, summary)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (company_name, document_date, document_type) DO UPDATE
-            SET filename = EXCLUDED.filename, summary = EXCLUDED.summary
-        """, (company_name, document_date, document_type, file.filename, text))
-        conn.commit()
+        # ✅ Combine all document texts
+        combined_text = f"""
+        Quarterly Report:\n{report_text}\n\n
+        Investor Presentation:\n{presentation_text}\n\n
+        Earnings Call Transcript:\n{transcript_text}\n
+        """
 
-        # ✅ Fetch all existing summaries for this company
-        cursor.execute("""
-            SELECT summary FROM summaries WHERE company_name = %s
-        """, (company_name,))
-        all_summaries = [row[0] for row in cursor.fetchall()]
-
-        # ✅ Combine all document summaries
-        combined_text = "\n\n".join(all_summaries)
-
-        # ✅ Generate AI Analysis Only When a New File is Uploaded
+        # ✅ Generate AI Analysis
         ai_prompt = f"""
-        Generate a structured **equity research report** for {company_name}.
+        Generate a structured **equity research report** for {company_name} for {analysis_quarter}.
 
         **1. Executive Summary**
         **2. Key Financial Highlights** (Show in Markdown table)
@@ -99,61 +81,40 @@ async def upload_file(
         """
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(ai_prompt)
-
         final_analysis = response.text
 
         # ✅ Store AI-generated report in `final_analysis` table
         cursor.execute("""
-            INSERT INTO final_analysis (company_name, final_summary)
-            VALUES (%s, %s)
-            ON CONFLICT (company_name) DO UPDATE
+            INSERT INTO final_analysis (company_name, analysis_quarter, final_summary)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (company_name, analysis_quarter) DO UPDATE
             SET final_summary = EXCLUDED.final_summary
-        """, (company_name, final_analysis))
+        """, (company_name, analysis_quarter, final_analysis))
         conn.commit()
 
-        return {"message": "✅ File uploaded & AI analysis updated successfully."}
+        return {"message": "✅ Files uploaded & AI analysis updated successfully."}
 
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process files: {str(e)}")
 
-# ✅ API: Fetch Precomputed AI Report (No Re-Analysis)
-@app.get("/summary/{company_name}")
-async def get_summary(company_name: str):
+# ✅ API: Fetch Precomputed AI Report
+@app.get("/summary/{company_name}/{analysis_quarter}")
+async def get_summary(company_name: str, analysis_quarter: str):
     cursor.execute("""
-        SELECT final_summary FROM final_analysis WHERE company_name = %s
-    """, (company_name,))
+        SELECT final_summary FROM final_analysis
+        WHERE company_name = %s AND analysis_quarter = %s
+    """, (company_name, analysis_quarter))
 
     row = cursor.fetchone()
     if not row:
-        return {"message": "No precomputed analysis found for this company."}
+        return {"message": "No precomputed analysis found for this company and quarter."}
 
-    return {"Company Name": company_name, "Comprehensive Analysis": row[0]}
+    return {"Company Name": company_name, "Analysis Quarter": analysis_quarter, "Comprehensive Analysis": row[0]}
 
-# ✅ API: Fetch All Companies (For Dropdown in UI)
+# ✅ API: Fetch All Companies
 @app.get("/companies")
 async def get_companies():
-    cursor.execute("SELECT DISTINCT company_name FROM summaries")
+    cursor.execute("SELECT DISTINCT company_name FROM final_analysis")
     companies = [row[0] for row in cursor.fetchall()]
     return {"companies": companies} if companies else {"message": "No companies found."}
-
-# ✅ API: Admin Panel - View Uploaded Documents
-@app.get("/admin-summary")
-async def get_admin_summary():
-    cursor.execute("""
-        SELECT company_name,
-               MIN(document_date) AS created_date,
-               MAX(document_date) AS last_updated_date
-        FROM summaries
-        GROUP BY company_name
-    """)
-    rows = cursor.fetchall()
-
-    return {"companies": [{"Company Name": row[0], "Created Date": row[1], "Last Updated Date": row[2]} for row in rows]}
-
-# ✅ API: Debug - View Raw Data (For Admin Use)
-@app.get("/debug-summaries")
-async def debug_summaries():
-    cursor.execute("SELECT * FROM summaries")
-    data = cursor.fetchall()
-    return {"data": data}
