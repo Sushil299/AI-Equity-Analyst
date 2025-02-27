@@ -49,22 +49,35 @@ async def extract_text_from_pdf(file: UploadFile):
 async def upload_files(
     company_name: str = Form(...),
     analysis_quarter: str = Form(...),
-    quarterly_report: UploadFile = File(...),
-    investor_presentation: UploadFile = File(...),
-    earnings_call_transcript: UploadFile = File(...)
+    quarterly_report: UploadFile = File(None),
+    investor_presentation: UploadFile = File(None),
+    earnings_call_transcript: UploadFile = File(None)
 ):
     try:
-        # ✅ Extract text from all uploaded PDFs
+        # ✅ Open a new connection for this request
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
+        # ✅ Extract text from uploaded PDFs
         report_text = await extract_text_from_pdf(quarterly_report)
         presentation_text = await extract_text_from_pdf(investor_presentation)
         transcript_text = await extract_text_from_pdf(earnings_call_transcript)
 
-        # ✅ Combine all document texts
+        if not any([report_text, presentation_text, transcript_text]):
+            raise HTTPException(status_code=400, detail="At least one document must be uploaded.")
+
+        # ✅ Combine all extracted text
         combined_text = f"""
-        Quarterly Report:\n{report_text}\n\n
-        Investor Presentation:\n{presentation_text}\n\n
-        Earnings Call Transcript:\n{transcript_text}\n
+        Quarterly Report:
+        {report_text}
+
+        Investor Presentation:
+        {presentation_text}
+
+        Earnings Call Transcript:
+        {transcript_text}
         """
+
 
         # ✅ Generate AI Analysis
         ai_prompt = f"""
