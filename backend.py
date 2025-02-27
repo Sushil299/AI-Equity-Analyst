@@ -115,6 +115,17 @@ async def get_summary(company_name: str, analysis_quarter: str):
 # ✅ API: Fetch All Companies
 @app.get("/companies")
 async def get_companies():
-    cursor.execute("SELECT DISTINCT company_name FROM final_analysis")
-    companies = [row[0] for row in cursor.fetchall()]
-    return {"companies": companies} if companies else {"message": "No companies found."}
+    try:
+        conn = psycopg2.connect(DATABASE_URL)  # Open new DB connection
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT DISTINCT company_name FROM final_analysis")
+        companies = [row[0] for row in cursor.fetchall()]
+
+        cursor.close()  # Close the cursor properly
+        conn.close()  # Close the connection properly
+
+        return {"companies": companies} if companies else {"message": "No companies found."}
+
+    except Exception as e:
+        return {"error": f"Database error: {str(e)}"}
