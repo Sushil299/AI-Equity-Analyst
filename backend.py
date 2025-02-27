@@ -69,7 +69,8 @@ async def upload_files(
         # ✅ Generate AI Analysis
         ai_prompt = f"""
 
-        "You are an advanced AI equity analyst specializing in fundamental and financial analysis. Given the earnings call transcript, investor presentation, and quarterly results of {company_name} for {analysis_quarter} generate a well-structured equity research report. Your goal is to provide clear and actionable insights for investors, helping them make informed investment decisions.
+        "You are an advanced AI equity analyst specializing in fundamental and financial analysis. Given the earnings call transcript, investor presentation, and quarterly results of {company_name} for {analysis_quarter} generate a well-structured equity research report. Your goal is to provide clear and actionable insights for investors, helping them make informed investment decisions. Also make sure not to write "AI powered equity report in title.
+        Just mention - Company Name and Quarter in subtitle or header2
 
         Structure your response as follows:
         1️⃣ Company Overview - Briefly introduce the company, its industry, and its business model.
