@@ -99,18 +99,16 @@ async def upload_files(
         raise HTTPException(status_code=500, detail=f"Failed to process files: {str(e)}")
 
 # ✅ API: Fetch Precomputed AI Report
-@app.get("/summary/{company_name}/{analysis_quarter}")
-async def get_summary(company_name: str, analysis_quarter: str):
-    cursor.execute("""
-        SELECT final_summary FROM final_analysis
-        WHERE company_name = %s AND analysis_quarter = %s
-    """, (company_name, analysis_quarter))
-
-    row = cursor.fetchone()
-    if not row:
-        return {"message": "No precomputed analysis found for this company and quarter."}
-
-    return {"Company Name": company_name, "Analysis Quarter": analysis_quarter, "Comprehensive Analysis": row[0]}
+@app.get("/summary/{company_name}")
+async def get_summary(company_name: str):
+    try:
+        cursor.execute("SELECT final_summary FROM final_analysis WHERE company_name = %s", (company_name,))
+        result = cursor.fetchone()
+        if result:
+            return JSONResponse(content={"final_summary": result[0]})
+        return JSONResponse(content={"error": "No analysis found"}, status_code=404)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
 # ✅ API: Fetch All Companies
 @app.get("/companies")
