@@ -172,13 +172,22 @@ async def upload_files(
 @app.get("/summary/{company_name}")
 async def get_summary(company_name: str):
     try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
         cursor.execute("SELECT final_summary FROM final_analysis WHERE company_name = %s", (company_name,))
         result = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
         if result:
             return JSONResponse(content={"final_summary": result[0]})
-        return JSONResponse(content={"error": "No analysis found"}, status_code=404)
+        else:
+            return JSONResponse(content={"error": "No analysis found for this company"}, status_code=404)
+
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return JSONResponse(content={"error": f"Database error: {str(e)}"}, status_code=500)
 
 # ✅ API: Fetch All Companies
 @app.get("/companies")
